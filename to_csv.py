@@ -1,21 +1,28 @@
-import json, sys, os, xmltodict, csv
+import json
+import sys
+import os
+import xmltodict
+import csv
 from os.path import join
 from utils import *
 import shutil
 
 PATH = sys.argv[1]
-DIR = PATH.replace('extracted/','')
+DIR = PATH.replace('extracted/', '')
 
-print("importing",DIR)
+print("importing", DIR)
 
-file = join(PATH,'Posts.xml')
+file = join(PATH, 'Posts.xml')
+
 
 def clean(x):
-    #neo4j-import doesn't support: multiline (coming soon), quotes next to each other and escape quotes with '\""'
-    return x.replace('\n','').replace('\r','').replace('\\','').replace('"','')
+    # neo4j-import doesn't support: multiline (coming soon), quotes next to each other and escape quotes with '\""'
+    return x.replace('\n', '').replace('\r', '').replace('\\', '').replace('"', '')
+
 
 def open_csv(name):
-    return csv.writer(open('csvs/{}.csv'.format(name), 'w'), doublequote=False, escapechar='\\')
+    return csv.writer(open('csvs/{}.csv'.format(name), 'w', encoding='utf-8'), doublequote=False, escapechar='\\')
+
 
 try:
     shutil.rmtree('csvs/')
@@ -25,86 +32,127 @@ os.mkdir('csvs')
 
 posts = open_csv('posts')
 posts_rel = open_csv('posts_rel')
+
 users = open_csv('users')
 users_posts_rel = open_csv('users_posts_rel')
-tags = open_csv('tags')
-tags_posts_rel = open_csv('tags_posts_rel')
 
-posts.writerow(['postId:ID(Post)', 'title', 'body','score','views','comments'])
+votes = open_csv('votes')
+votes_users_rel = open_csv('votes_users_rel')
+votes_posts_rel = open_csv('votes_posts_rel')
+
+comments = open_csv('comments')
+comments_users_rel = open_csv('comments_users_rel')
+comments_posts_rel = open_csv('comments_posts_rel')
+
+posts_things = ['posttypeid', 'acceptedanswerid', 'creationdate', 'deletiondate', 'score', 'viewcount', 'body',
+                'ownerdisplayname', 'lasteditoruserid', 'lasteditordisplayname', 'lasteditdate', 'lastactivitydate',
+                'title', 'answercount', 'commentcount', 'favoritecount', 'closeddate', 'communityowneddate']
+posts.writerow(['postId:ID(Post)'] + posts_things)
 posts_rel.writerow([':START_ID(Post)', ':END_ID(Post)'])
 
-users_things = ['displayname', 'reputation', 'aboutme', \
-    'websiteurl', 'location', 'profileimageurl', 'views', 'upvotes', 'downvotes']
+users_things = ['reputation', 'creationdate', 'displayname', 'lastaccessdate', 'websiteurl', 'location', 'profileimageurl', 'aboutme',
+                'views', 'upvotes', 'downvotes', 'age', 'accountid', 'emailhash']
 users.writerow(['userId:ID(User)'] + users_things)
 users_posts_rel.writerow([':START_ID(User)', ':END_ID(Post)'])
 
-tags.writerow(['tagId:ID(Tag)'])
-tags_posts_rel.writerow([':START_ID(Post)', ':END_ID(Tag)'])
+votes_things = ['votetypeid', 'creationdate', 'bountyamount']
+votes.writerow(['voteId:ID(Vote)'] + votes_things)
+votes_users_rel.writerow([':START_ID(User)', ':END_ID(Vote)'])
+votes_posts_rel.writerow([':START_ID(Post)', ':END_ID(Vote)'])
 
-for i, line in enumerate(open(file)):
+comments_things = ['score', 'text', 'creationdate', 'userdisplayname']
+comments.writerow(['commentId:ID(Comment)'] + comments_things)
+comments_users_rel.writerow([':START_ID(User)', ':END_ID(Comment)'])
+comments_posts_rel.writerow([':START_ID(Post)', ':END_ID(Comment)'])
+
+for i, line in enumerate(open(file, encoding='utf8')):
     line = line.strip()
     try:
         if line.startswith("<row"):
             el = xmltodict.parse(line)['row']
             el = replace_keys(el)
-            posts.writerow([
-                el['id'],
-                clean(el.get('title','')),
-                clean(el.get('body',''))[:100],
-                clean(el.get('score','')),
-                clean(el.get('viewcount','')),
-                clean(el.get('commentcount','')),
-            ])
+            row = [el['id'], ]
+            for k in posts_things:
+                row.append(clean(el.get(k, '')))
+            posts.writerow(row)
             if el.get('parentid'):
-                posts_rel.writerow([el['parentid'],el['id']])
+                posts_rel.writerow([el['parentid'], el['id']])
             if el.get('owneruserid'):
-                users_posts_rel.writerow([el['owneruserid'],el['id']])
+                users_posts_rel.writerow([el['owneruserid'], el['id']])
             if el.get('tags'):
-                eltags = [x.replace('<','') for x in el.get('tags').split('>')]
-                for tag in [x for x in eltags if x]:
-                    tags_posts_rel.writerow([el['id'],tag])
+                eltags = [x.replace('<', '') for x in el.get('tags').split('>')]
+                # for tag in [x for x in eltags if x]:
+                #     tags_posts_rel.writerow([el['id'], tag])
     except Exception as e:
-        print('x',e)
-    if i and i % 5000 == 0:
-        print('.',end='')
+        print('x', e)
+    if i and i % 100000 == 0:
+        print('.', end='')
     if i and i % 1000000 == 0:
         print(i)
 
-print(i,'posts ok')
+print(i, 'posts ok')
 
-file = join(PATH,'Users.xml')
+file = join(PATH, 'Users.xml')
 
-for i, line in enumerate(open(file)):
+for i, line in enumerate(open(file, encoding='utf-8')):
     line = line.strip()
     try:
         if line.startswith("<row"):
             el = xmltodict.parse(line)['row']
             el = replace_keys(el)
-            row = [el['id'],]
+            row = [el['id'], ]
             for k in users_things:
-                row.append(clean(el.get(k,'')[:100]))
+                row.append(clean(el.get(k, '')))
             users.writerow(row)
     except Exception as e:
-        print('x',e)
-    if i % 5000 == 0:
-        print('.',end='')
+        print('x', e)
+    if i % 100000 == 0:
+        print('.', end='')
 
-print(i,'users ok')
+print(i, 'users ok')
 
-file = join(PATH,'Tags.xml')
+file = join(PATH, 'Votes.xml')
 
-for i, line in enumerate(open(file)):
+for i, line in enumerate(open(file, encoding='utf-8')):
     line = line.strip()
     try:
         if line.startswith("<row"):
             el = xmltodict.parse(line)['row']
             el = replace_keys(el)
-            tags.writerow([
-                el['tagname'],
-            ])
+            row = [el['id'], ]
+            for k in votes_things:
+                row.append(clean(el.get(k, '')))
+            votes.writerow(row)
+            if el.get('postid'):
+                votes_posts_rel.writerow([el['postid'], el['id']])
+            if el.get('userid'):
+                votes_users_rel.writerow([el['userid'], el['id']])
     except Exception as e:
-        print('x',e)
-    if i % 5000 == 0:
-        print('.',end='')
+        print('x', e)
+    if i % 100000 == 0:
+        print('.', end='')
 
-print(i,'tags ok')
+print(i, 'votes ok')
+
+file = join(PATH, 'Comments.xml')
+
+for i, line in enumerate(open(file, encoding='utf-8')):
+    line = line.strip()
+    try:
+        if line.startswith("<row"):
+            el = xmltodict.parse(line)['row']
+            el = replace_keys(el)
+            row = [el['id'], ]
+            for k in comments_things:
+                row.append(clean(el.get(k, '')))
+            comments.writerow(row)
+            if el.get('postid'):
+                comments_posts_rel.writerow([el['postid'], el['id']])
+            if el.get('userid'):
+                comments_users_rel.writerow([el['userid'], el['id']])
+    except Exception as e:
+        print('x', e)
+    if i % 100000 == 0:
+        print('.', end='')
+
+print(i, 'comments ok')
